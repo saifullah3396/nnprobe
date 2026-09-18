@@ -35,3 +35,6 @@ class ProbeConfig:
             raise ValueError("C must be positive")
         if not 0 < self.test_size < 1:
             raise ValueError("test_size must be between 0 and 1")
+
+
+ProbePipelineConfig = ProbeConfig

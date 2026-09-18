@@ -6,6 +6,7 @@ from typing import final
 
 from nnact import ActivationDataset
 
+from nnprobe._config import ProbePipelineConfig
 from nnprobe._result import EvalResult, TrainResult
 from nnprobe._trainer import FilterFn, PoolFn, ProbeTrainer, TargetFn
 
@@ -24,8 +25,8 @@ class ProbePipeline:
     independent and keyed by its own ``cache_path``.
     """
 
-    def __init__(self, *, trainer: ProbeTrainer) -> None:
-        self._trainer = trainer
+    def __init__(self, *, config: ProbePipelineConfig) -> None:
+        self._trainer = ProbeTrainer(config=config)
 
     def train(
         self,

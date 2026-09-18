@@ -1,4 +1,4 @@
-from nnprobe._config import ProbeConfig, ProbeKind
+from nnprobe._config import ProbeConfig, ProbeKind, ProbePipelineConfig
 from nnprobe._metrics import ProbeMetrics, evaluate_predictions
 from nnprobe._pipeline import ProbePipeline
 from nnprobe._result import EvalResult, TrainResult
@@ -13,6 +13,7 @@ __all__ = [
     "ProbeKind",
     "ProbeMetrics",
     "ProbePipeline",
+    "ProbePipelineConfig",
     "ProbeTrainer",
     "TargetFn",
     "TrainResult",

@@ -10,10 +10,9 @@
 ## Basic usage
 
 ```python
-from nnprobe import ProbeConfig, ProbePipeline, ProbeTrainer
+from nnprobe import ProbeConfig, ProbePipeline
 
-trainer = ProbeTrainer(config=ProbeConfig(C=0.1))
-pipeline = ProbePipeline(trainer=trainer)
+pipeline = ProbePipeline(config=ProbeConfig(C=0.1))
 result = pipeline.train(
     dataset=activation_dataset,
     layer_name="model.layers.16.post_attention_layernorm",

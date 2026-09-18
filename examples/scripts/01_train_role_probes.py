@@ -17,7 +17,7 @@ from nnact import (
 from torch.utils.data import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from nnprobe import ProbeConfig, ProbePipeline, ProbeTrainer, TargetFn
+from nnprobe import ProbeConfig, ProbePipeline, TargetFn
 from nnprobe._trainer import FilterFn
 
 
@@ -144,7 +144,7 @@ def main(
         print("All role-space probes already cached; skipping activation extraction.")
 
     probe_pipeline = ProbePipeline(
-        trainer=ProbeTrainer(config=ProbeConfig(C=1.0e-1, add_scaling=False))
+        config=ProbeConfig(C=1.0e-1, add_scaling=False)
     )
     target_fn = make_role_targets()
     rows: list[dict[str, float | str]] = []
