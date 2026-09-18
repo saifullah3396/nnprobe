@@ -25,7 +25,9 @@ class EvalResult:
     @property
     def metrics(self) -> ProbeMetrics:
         return evaluate_predictions(
-            self.targets, self.predictions, labels=np.arange(len(self.classes_))
+            y_true=self.targets,
+            y_pred=self.predictions,
+            labels=np.arange(len(self.classes_)),
         )
 
 
@@ -49,10 +51,12 @@ class TrainResult:
     @property
     def metrics(self) -> ProbeMetrics:
         return evaluate_predictions(
-            self.targets, self.predictions, labels=np.arange(len(self.classes_))
+            y_true=self.targets,
+            y_pred=self.predictions,
+            labels=np.arange(len(self.classes_)),
         )
 
-    def save(self, path: str | Path) -> None:
+    def save(self, *, path: str | Path) -> None:
         """Pickle this result -- arrays, metrics inputs, and the fitted
         estimator alike -- to one file, creating parent directories as needed.
         """
@@ -61,6 +65,6 @@ class TrainResult:
         path.write_bytes(pickle.dumps(self))
 
     @classmethod
-    def load(cls, path: str | Path) -> TrainResult:
+    def load(cls, *, path: str | Path) -> TrainResult:
         """Load a :class:`TrainResult` previously written by :meth:`save`."""
         return pickle.loads(Path(path).read_bytes())

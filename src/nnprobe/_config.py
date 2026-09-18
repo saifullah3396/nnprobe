@@ -5,7 +5,16 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, kw_only=True)
 class ProbeConfig:
-    """Hyperparameters for the probe :class:`~nnprobe._probing._trainer.ProbeTrainer` builds."""
+    """Hyperparameters used to construct one linear classification probe.
+
+    Attributes:
+        C: Inverse regularization strength.
+        max_iter: Maximum classifier iterations.
+        add_scaling: Whether to standardize features before classification.
+        linesearch_max_iter: Maximum line-search iterations.
+        test_size: Fraction of samples held out for evaluation.
+        seed: Random seed used for the sample split.
+    """
 
     C: float = 1.0
     max_iter: int = 5_000

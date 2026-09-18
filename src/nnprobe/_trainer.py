@@ -1,20 +1,27 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Protocol, final
 
 import numpy as np
+from nnact import ActivationDataset
 
 from nnprobe._config import ProbeConfig
-from nnact import ActivationDataset
 from nnprobe._result import EvalResult, TrainResult
-
-import logging
 
 logger = logging.getLogger(__name__)
 
+type Metadata = dict[str, np.ndarray]
+
 
 class FilterFn(Protocol):
+    """Select rows from one :class:`nnact.ActivationDataset`.
+
+    The dataset is passed intact so filters can use its activations, metadata,
+    token ids, and token-to-sample mapping without a second parallel API.
+    """
+
     def __call__(
         self,
         *,
@@ -25,6 +32,8 @@ class FilterFn(Protocol):
 
 
 class PoolFn(Protocol):
+    """Reduce sequence activations while preserving the sample row count."""
+
     def __call__(self, *, activations: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """Reduce ``(num_rows, seq_len, *feature)`` to ``(num_rows, *feature)``."""
         ...
@@ -39,11 +48,13 @@ class ProbeTrainer:
     """Fits and evaluates one linear probe on an :class:`ActivationDataset`.
 
     Example:
-        >>> trainer = ProbeTrainer(ProbeConfig(C=0.5))
-        >>> result = trainer.train(dataset, "model.layers.12")  # doctest: +SKIP
+        >>> trainer = ProbeTrainer(config=ProbeConfig(C=0.5))
+        >>> result = trainer.train(  # doctest: +SKIP
+        ...     dataset=dataset, layer_name="model.layers.12"
+        ... )
     """
 
-    def __init__(self, config: ProbeConfig) -> None:
+    def __init__(self, *, config: ProbeConfig) -> None:
         self._config = config
         self.estimator_: object | None = None
         self.classes_: np.ndarray | None = None
@@ -76,12 +87,8 @@ class ProbeTrainer:
         train/test split, since the probe was already fitted elsewhere
         (typically by an earlier :meth:`train` call on this same trainer).
         """
-        assert self.estimator_ is not None, (
-            "no fitted estimator; call train() before evaluate()."
-        )
-        assert self.classes_ is not None, (
-            "no known class set; call train() before evaluate()."
-        )
+        if self.estimator_ is None or self.classes_ is None:
+            raise RuntimeError("no fitted estimator; call train() before evaluate()")
 
         x, y, _sample_of_row = self._select(
             dataset, layer_name, filter_fn=filter_fn, pool_fn=pool_fn
@@ -101,13 +108,13 @@ class ProbeTrainer:
             classes_=self.classes_,
         )
 
-    def load(self, path: str | Path) -> TrainResult:
+    def load(self, *, path: str | Path) -> TrainResult:
         """Restore the fitted estimator from a :class:`TrainResult` cached by
         :meth:`~nnprobe._probing._pipeline.ProbePipeline.train`, so
         :meth:`evaluate` can run against it without calling :meth:`train`
         again first.
         """
-        result = TrainResult.load(path)
+        result = TrainResult.load(path=path)
         self.estimator_ = result.estimator
         self.classes_ = result.classes_
         return result
@@ -121,23 +128,18 @@ class ProbeTrainer:
         pool_fn: PoolFn | None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         metadata = dataset.metadata
-        assert metadata is not None and "labels" in metadata, (
-            "dataset metadata must contain a 'labels' entry for probing."
-        )
+        if metadata is None or "labels" not in metadata:
+            raise ValueError("dataset metadata must contain a 'labels' entry")
         labels = np.asarray(metadata["labels"])
 
         is_token_level = hasattr(dataset, "sample_of_token")
 
         if is_token_level:
-            assert pool_fn is None, (
-                "pool_fn has no effect on a token-level dataset: a token is "
-                "already a row, there is nothing to pool across seq_len."
-            )
+            if pool_fn is not None:
+                raise ValueError("pool_fn cannot be used with token-level datasets")
             x = dataset.activations[layer_name]
             y = labels
             sample_of_row = dataset.sample_of_token  # type: ignore[attr-defined]
-            token_ids = getattr(dataset, "token_ids", None)
-
             mask = self._filter_mask(filter_fn, dataset, sample_of_row)
             x, y, sample_of_row = x[mask], y[mask], sample_of_row[mask]
         else:

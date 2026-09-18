@@ -55,3 +55,9 @@ torchvision = { index = "pytorch-cu126" }
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
+
+[tool.coverage.run]
+source = ["src/nnprobe"]
+
+[tool.coverage.report]
+omit = ["tests/*"]

@@ -43,12 +43,16 @@ class RoleConversationSamples(Dataset[TokenActivationSample]):
             role if role == target_role else self._no_role_label
             for role in record["token_roles"]
         ]
+        turn_positions = [
+            position if position is not None else -1
+            for position in record["token_idx_in_turn"]
+        ]
         return TokenActivationSample(
             model_input=SequenceModelInput(
                 input_ids=torch.tensor(record["token_ids"], dtype=torch.long),
                 attention_mask=torch.tensor(record["attention_mask"], dtype=torch.long),
             ),
-            metadata={"labels": labels, "turn_positions": record["token_idx_in_turn"]},
+            metadata={"labels": labels, "turn_positions": turn_positions},
         )
 
 
@@ -108,8 +112,8 @@ def main(
         )
         print(f"{len(dataset)} conversations | roles: {list(roles)}")
         activation_pipeline = ActivationPipeline(
-            model_instance,
-            [layer_name],
+            model=model_instance,
+            layer_names=[layer_name],
             output_type="token",
             tokenizer=tokenizer,
             cache_outputs=True,
@@ -121,7 +125,7 @@ def main(
         print("All role-space probes already cached; skipping activation extraction.")
 
     probe_pipeline = ProbePipeline(
-        ProbeTrainer(ProbeConfig(C=1.0e-1, add_scaling=False))
+        trainer=ProbeTrainer(config=ProbeConfig(C=1.0e-1, add_scaling=False))
     )
     rows: list[dict[str, float | str]] = []
     for role_space in role_combinations:
@@ -161,7 +165,8 @@ def main(
             }
         )
 
-    results_path = PROBE_CACHE_DIR / "results.json"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    results_path = cache_dir / "results.json"
     json_rows = [
         {
             key: value.tolist() if isinstance(value, np.ndarray) else value
