@@ -1,0 +1,57 @@
+[project]
+name = "nnprobe"
+version = "0.1.0"
+description = "Model-agnostic activation extraction and HDF5 caching for PyTorch models"
+requires-python = ">=3.13"
+dependencies = [
+    "nnact",
+    "fire>=0.7.1",
+    "h5py>=3.16.0",
+    "pytorch-ignite>=0.5.5",
+    "torch>=2.7.0",
+    "datasets>=5.0.1",
+    "ipykernel>=7.3.0",
+    "jupyter>=1.1.1",
+    "jupytext>=1.19.5",
+    "nbclient>=0.11.0",
+    "nbconvert>=7.17.1",
+    "nbformat>=5.11.1",
+    "torchvision",
+    "tqdm>=4.70.1",
+    "transformers",
+    "scikit-learn>=1.5",
+    "cuml-cu12>=26.8.0",
+    "ml-dtypes>=0.6.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1", "ruff>=0.16.7"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+ignoreMissingTypeStubs = true
+
+[[tool.uv.index]]
+url = "https://pypi.nvidia.com/"
+
+[[tool.uv.index]]
+url = "https://pypi.nvidia.com/simple"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+nnact = { path = "../nnact", editable = true }
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
