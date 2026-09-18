@@ -17,18 +17,27 @@ pipeline = ProbePipeline(trainer=trainer)
 result = pipeline.train(
     dataset=activation_dataset,
     layer_name="model.layers.16.post_attention_layernorm",
+    target_fn=role_targets,
 )
 ```
 
-Labels must be attached to the `nnact` dataset as row-aligned metadata under
-the `"labels"` key. A filter receives the complete dataset and returns one
-boolean value for every activation row:
+Targets are extracted explicitly from row-aligned dataset metadata with a
+`TargetFn`. A filter receives the complete dataset and returns one boolean
+value for every activation row:
 
 ```python
+def role_targets(*, dataset):
+    metadata = dataset.metadata
+    if metadata is None:
+        raise ValueError("missing metadata")
+    return metadata["role"]
+
+
 def keep_role_tokens(*, dataset):
     metadata = dataset.metadata
-    assert metadata is not None
-    return metadata["labels"] != "none"
+    if metadata is None:
+        raise ValueError("missing metadata")
+    return metadata["role"] != "none"
 ```
 
 The runnable role-probe example is

@@ -8,6 +8,7 @@ import numpy as np
 from nnact import ActivationDataset
 
 from nnprobe._config import ProbeConfig
+from nnprobe._estimators import ProbeEstimator, build_estimator
 from nnprobe._result import EvalResult, TrainResult
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,12 @@ class FilterFn(Protocol):
     ) -> np.ndarray:
         """Return a boolean mask over this dataset's activation rows."""
         ...
+
+
+class TargetFn(Protocol):
+    """Extract one training target for every activation row."""
+
+    def __call__(self, *, dataset: ActivationDataset) -> np.ndarray: ...
 
 
 class PoolFn(Protocol):
@@ -56,7 +63,7 @@ class ProbeTrainer:
 
     def __init__(self, *, config: ProbeConfig) -> None:
         self._config = config
-        self.estimator_: object | None = None
+        self.estimator_: ProbeEstimator | None = None
         self.classes_: np.ndarray | None = None
 
     def train(
@@ -64,11 +71,16 @@ class ProbeTrainer:
         *,
         dataset: ActivationDataset,
         layer_name: str,
+        target_fn: TargetFn,
         filter_fn: FilterFn | None = None,
         pool_fn: PoolFn | None = None,
     ) -> TrainResult:
         x, y, sample_of_row = self._select(
-            dataset, layer_name, filter_fn=filter_fn, pool_fn=pool_fn
+            dataset,
+            layer_name,
+            target_fn=target_fn,
+            filter_fn=filter_fn,
+            pool_fn=pool_fn,
         )
         train_mask, test_mask = self._split(sample_of_row)
         return self._fit(x[train_mask], y[train_mask], x[test_mask], y[test_mask])
@@ -78,6 +90,7 @@ class ProbeTrainer:
         *,
         dataset: ActivationDataset,
         layer_name: str,
+        target_fn: TargetFn,
         filter_fn: FilterFn | None = None,
         pool_fn: PoolFn | None = None,
     ) -> EvalResult:
@@ -91,7 +104,11 @@ class ProbeTrainer:
             raise RuntimeError("no fitted estimator; call train() before evaluate()")
 
         x, y, _sample_of_row = self._select(
-            dataset, layer_name, filter_fn=filter_fn, pool_fn=pool_fn
+            dataset,
+            layer_name,
+            target_fn=target_fn,
+            filter_fn=filter_fn,
+            pool_fn=pool_fn,
         )
         unknown_labels = set(np.unique(y).tolist()) - set(self.classes_.tolist())
         if unknown_labels:
@@ -99,12 +116,12 @@ class ProbeTrainer:
                 f"dataset has label(s) {unknown_labels} the probe was never "
                 f"trained on; known classes are {self.classes_.tolist()}."
             )
-        y_idx = np.searchsorted(self.classes_, y)
         predictions, probabilities = self._predict(x)
         return EvalResult(
             predictions=predictions,
             probabilities=probabilities,
-            targets=y_idx,
+            scores=self.estimator_.scores(activations=x),
+            targets=y,
             classes_=self.classes_,
         )
 
@@ -124,15 +141,25 @@ class ProbeTrainer:
         dataset: ActivationDataset,
         layer_name: str,
         *,
+        target_fn: TargetFn,
         filter_fn: FilterFn | None,
         pool_fn: PoolFn | None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        metadata = dataset.metadata
-        if metadata is None or "labels" not in metadata:
-            raise ValueError("dataset metadata must contain a 'labels' entry")
-        labels = np.asarray(metadata["labels"])
+        labels = np.asarray(target_fn(dataset=dataset))
+
+        if labels.ndim != 1:
+            raise ValueError(
+                f"target_fn must return a one-dimensional array, got {labels.shape}"
+            )
 
         is_token_level = hasattr(dataset, "sample_of_token")
+        expected_rows = (
+            dataset.activations[layer_name].shape[0] if is_token_level else len(dataset)
+        )
+        if labels.shape != (expected_rows,):
+            raise ValueError(
+                f"target_fn returned {labels.shape}; expected ({expected_rows},)"
+            )
 
         if is_token_level:
             if pool_fn is not None:
@@ -195,10 +222,6 @@ class ProbeTrainer:
         x_test: np.ndarray,
         y_test: np.ndarray,
     ) -> TrainResult:
-        import cuml
-        import cuml.pipeline
-        import cupy
-
         logger.info(
             "Fitting probe: %d train rows, %d test rows", len(y_train), len(y_test)
         )
@@ -212,59 +235,24 @@ class ProbeTrainer:
                 "actually include tokens for every role in this role space."
             )
 
-        classes = np.unique(y_train)
-        y_train_idx = np.searchsorted(classes, y_train)
-        y_test_idx = np.searchsorted(classes, y_test)
-
-        logger.info(
-            "DEBUG fit features shape=%s dtype=%s; train_labels shape=%s dtype=%s "
-            "classes=%s; test_labels shape=%s dtype=%s",
-            x_train.shape,
-            x_train.dtype,
-            y_train_idx.shape,
-            y_train_idx.dtype,
-            classes.tolist(),
-            y_test_idx.shape,
-            y_test_idx.dtype,
-        )
-
-        steps = []
-        if self._config.add_scaling:
-            steps.append(("scaler", cuml.preprocessing.StandardScaler()))
-        steps.append(
-            (
-                "clf",
-                cuml.linear_model.LogisticRegression(
-                    C=self._config.C,
-                    max_iter=self._config.max_iter,
-                    linesearch_max_iter=self._config.linesearch_max_iter,
-                ),
-            )
-        )
-        estimator = cuml.pipeline.Pipeline(steps) if len(steps) > 1 else steps[0][1]
-
-        cupy_x_train = cupy.asarray(x_train)
-        cupy_y_train = cupy.asarray(y_train_idx)
-
-        estimator.fit(cupy_x_train, cupy_y_train)
+        estimator = build_estimator(config=self._config)
+        estimator.fit(activations=x_train, targets=y_train)
         self.estimator_ = estimator
-        self.classes_ = classes
+        self.classes_ = estimator.classes_
 
         predictions, probabilities = self._predict(x_test)
         return TrainResult(
             predictions=predictions,
             probabilities=probabilities,
-            targets=y_test_idx,
+            scores=estimator.scores(activations=x_test),
+            targets=y_test,
             estimator=estimator,
-            classes_=classes,
+            classes_=estimator.classes_,
         )
 
     def _predict(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        import cupy
-
         estimator = self.estimator_
-        cupy_x = cupy.asarray(x)
-
-        predictions = cupy.asnumpy(estimator.predict(cupy_x))
-        probabilities = cupy.asnumpy(estimator.predict_proba(cupy_x))
+        assert estimator is not None
+        predictions = estimator.predict(activations=x)
+        probabilities = estimator.probabilities(activations=x)
         return predictions, probabilities

@@ -7,7 +7,7 @@ from nnprobe import ProbeConfig, ProbeTrainer
 class FakeSequenceDataset(ActivationDataset):
     def __init__(self) -> None:
         self._activations = {"layer": np.arange(12, dtype=np.float32).reshape(3, 2, 2)}
-        self._metadata = {"labels": np.array(["keep", "drop", "keep"])}
+        self._metadata = {"role": np.array(["keep", "drop", "keep"])}
 
     @property
     def layer_names(self) -> list[str]:
@@ -32,12 +32,18 @@ def test_filter_receives_the_complete_dataset() -> None:
     def keep_rows(*, dataset: ActivationDataset) -> np.ndarray:
         seen.append(dataset)
         assert dataset.metadata is not None
-        return dataset.metadata["labels"] == "keep"
+        return dataset.metadata["role"] == "keep"
 
     trainer = ProbeTrainer(config=ProbeConfig())
+
+    def target_fn(*, dataset: ActivationDataset) -> np.ndarray:
+        assert dataset.metadata is not None
+        return dataset.metadata["role"]
+
     activations, labels, samples = trainer._select(
         dataset=dataset,
         layer_name="layer",
+        target_fn=target_fn,
         filter_fn=keep_rows,
         pool_fn=None,
     )

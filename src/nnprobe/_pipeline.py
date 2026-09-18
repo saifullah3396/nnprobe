@@ -7,7 +7,7 @@ from typing import final
 from nnact import ActivationDataset
 
 from nnprobe._result import EvalResult, TrainResult
-from nnprobe._trainer import FilterFn, PoolFn, ProbeTrainer
+from nnprobe._trainer import FilterFn, PoolFn, ProbeTrainer, TargetFn
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ class ProbePipeline:
         *,
         dataset: ActivationDataset,
         layer_name: str,
+        target_fn: TargetFn,
         cache_path: str | Path | None = None,
         force_rerun: bool = False,
         filter_fn: FilterFn | None = None,
@@ -46,6 +47,7 @@ class ProbePipeline:
         result = self._trainer.train(
             dataset=dataset,
             layer_name=layer_name,
+            target_fn=target_fn,
             filter_fn=filter_fn,
             pool_fn=pool_fn,
         )
@@ -61,6 +63,7 @@ class ProbePipeline:
         *,
         dataset: ActivationDataset,
         layer_name: str,
+        target_fn: TargetFn,
         cache_path: str | Path | None = None,
         filter_fn: FilterFn | None = None,
         pool_fn: PoolFn | None = None,
@@ -84,6 +87,7 @@ class ProbePipeline:
         return self._trainer.evaluate(
             dataset=dataset,
             layer_name=layer_name,
+            target_fn=target_fn,
             filter_fn=filter_fn,
             pool_fn=pool_fn,
         )

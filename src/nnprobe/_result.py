@@ -18,7 +18,8 @@ class EvalResult:
     """
 
     predictions: np.ndarray
-    probabilities: np.ndarray
+    scores: np.ndarray
+    probabilities: np.ndarray | None
     targets: np.ndarray
     classes_: np.ndarray
 
@@ -27,7 +28,7 @@ class EvalResult:
         return evaluate_predictions(
             y_true=self.targets,
             y_pred=self.predictions,
-            labels=np.arange(len(self.classes_)),
+            labels=self.classes_,
         )
 
 
@@ -43,7 +44,8 @@ class TrainResult:
     """
 
     predictions: np.ndarray
-    probabilities: np.ndarray
+    scores: np.ndarray
+    probabilities: np.ndarray | None
     targets: np.ndarray
     estimator: Any
     classes_: np.ndarray
@@ -53,7 +55,7 @@ class TrainResult:
         return evaluate_predictions(
             y_true=self.targets,
             y_pred=self.predictions,
-            labels=np.arange(len(self.classes_)),
+            labels=self.classes_,
         )
 
     def save(self, *, path: str | Path) -> None:

@@ -10,7 +10,7 @@ from nnact import ActivationPipeline, SequenceModelInput, TokenActivationSample
 from torch.utils.data import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from nnprobe import ProbeConfig, ProbePipeline, ProbeTrainer
+from nnprobe import ProbeConfig, ProbePipeline, ProbeTrainer, TargetFn
 from nnprobe._trainer import FilterFn
 
 
@@ -52,16 +52,26 @@ class RoleConversationSamples(Dataset[TokenActivationSample]):
                 input_ids=torch.tensor(record["token_ids"], dtype=torch.long),
                 attention_mask=torch.tensor(record["attention_mask"], dtype=torch.long),
             ),
-            metadata={"labels": labels, "turn_positions": turn_positions},
+            metadata={"role": labels, "turn_position": turn_positions},
         )
+
+
+def make_role_targets() -> TargetFn:
+    def role_targets(*, dataset) -> np.ndarray:
+        metadata = dataset.metadata
+        if metadata is None or "role" not in metadata:
+            raise ValueError("dataset metadata must contain 'role'")
+        return metadata["role"]
+
+    return role_targets
 
 
 def make_drop_outside_role_space(role_space: list[str], skip_first_n: int) -> FilterFn:
     def drop_outside_role_space(*, dataset) -> np.ndarray:
         metadata = dataset.metadata
         assert metadata is not None
-        return np.isin(metadata["labels"], role_space) & (
-            metadata["turn_positions"] >= skip_first_n
+        return np.isin(metadata["role"], role_space) & (
+            metadata["turn_position"] >= skip_first_n
         )
 
     return drop_outside_role_space
@@ -127,6 +137,7 @@ def main(
     probe_pipeline = ProbePipeline(
         trainer=ProbeTrainer(config=ProbeConfig(C=1.0e-1, add_scaling=False))
     )
+    target_fn = make_role_targets()
     rows: list[dict[str, float | str]] = []
     for role_space in role_combinations:
         role_space_key = ",".join(role[0] for role in role_space)
@@ -144,6 +155,7 @@ def main(
         result = probe_pipeline.train(
             dataset=activations,
             layer_name=layer_name,
+            target_fn=target_fn,
             cache_path=cache_path,
             filter_fn=filter_fn,
         )
