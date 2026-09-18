@@ -1,12 +1,19 @@
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 import fire
 import numpy as np
 import pandas as pd
 import torch
-from nnact import ActivationPipeline, SequenceModelInput, TokenActivationSample
+from nnact import (
+    ActivationDataset,
+    ActivationPipeline,
+    SequenceModelInput,
+    TokenActivationSample,
+)
 from torch.utils.data import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -66,7 +73,9 @@ def make_role_targets() -> TargetFn:
     return role_targets
 
 
-def make_drop_outside_role_space(role_space: list[str], skip_first_n: int) -> FilterFn:
+def make_drop_outside_role_space(
+    role_space: Sequence[str], skip_first_n: int
+) -> FilterFn:
     def drop_outside_role_space(*, dataset) -> np.ndarray:
         metadata = dataset.metadata
         assert metadata is not None
@@ -153,7 +162,7 @@ def main(
                 f"skip_first_n={skip_first_n}"
             )
         result = probe_pipeline.train(
-            dataset=activations,
+            dataset=cast(ActivationDataset, activations),
             layer_name=layer_name,
             target_fn=target_fn,
             cache_path=cache_path,
@@ -179,13 +188,7 @@ def main(
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     results_path = cache_dir / "results.json"
-    json_rows = [
-        {
-            key: value.tolist() if isinstance(value, np.ndarray) else value
-            for key, value in row.items()
-        }
-        for row in rows
-    ]
+    json_rows = [{key: value for key, value in row.items()} for row in rows]
     results_path.write_text(json.dumps(json_rows, indent=2))
 
     print(pd.DataFrame(rows))

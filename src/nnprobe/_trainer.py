@@ -250,7 +250,7 @@ class ProbeTrainer:
             classes_=estimator.classes_,
         )
 
-    def _predict(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _predict(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
         estimator = self.estimator_
         assert estimator is not None
         predictions = estimator.predict(activations=x)

@@ -31,14 +31,16 @@ def test_filter_receives_the_complete_dataset() -> None:
 
     def keep_rows(*, dataset: ActivationDataset) -> np.ndarray:
         seen.append(dataset)
-        assert dataset.metadata is not None
-        return dataset.metadata["role"] == "keep"
+        metadata = getattr(dataset, "metadata", None)
+        assert metadata is not None
+        return metadata["role"] == "keep"
 
     trainer = ProbeTrainer(config=ProbeConfig())
 
     def target_fn(*, dataset: ActivationDataset) -> np.ndarray:
-        assert dataset.metadata is not None
-        return dataset.metadata["role"]
+        metadata = getattr(dataset, "metadata", None)
+        assert metadata is not None
+        return metadata["role"]
 
     activations, labels, samples = trainer._select(
         dataset=dataset,

@@ -49,8 +49,9 @@ class _SklearnEstimator:
         return np.asarray(self._estimator.decision_function(activations))
 
     def probabilities(self, *, activations: np.ndarray) -> np.ndarray | None:
-        if hasattr(self._estimator, "predict_proba"):
-            return np.asarray(self._estimator.predict_proba(activations))
+        predict_proba = getattr(self._estimator, "predict_proba", None)
+        if predict_proba is not None:
+            return np.asarray(predict_proba(activations))
         return None
 
 

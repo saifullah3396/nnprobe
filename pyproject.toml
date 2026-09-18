@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=9.1.1", "ruff>=0.16.7"]
+dev = ["pyright>=1.1.390", "pytest>=9.1.1", "ruff>=0.16.7"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -34,7 +34,9 @@ pythonpath = ["src", "."]
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
-ignoreMissingTypeStubs = true
+venvPath = "."
+venv = ".venv"
+reportMissingTypeStubs = false
 
 [[tool.uv.index]]
 url = "https://pypi.nvidia.com/"
@@ -47,7 +49,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv.sources]
-nnact = { path = "../nnact", editable = true }
+nnact = { git = "https://github.com/saifullah3396/nnact.git" }
 torch = { index = "pytorch-cu126" }
 torchvision = { index = "pytorch-cu126" }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, cast
 
 import numpy as np
 
@@ -43,7 +44,11 @@ def evaluate_predictions(
     )
 
     precision, recall, f1, _ = precision_recall_fscore_support(
-        y_true, y_pred, labels=labels, average="micro", zero_division=0
+        y_true,
+        y_pred,
+        labels=labels,
+        average="micro",
+        zero_division=cast(Any, 0),
     )
 
     return ProbeMetrics(
