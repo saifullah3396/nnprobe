@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Protocol
 
 import numpy as np
 
 from nnprobe._config import ProbeConfig
+
+logger = logging.getLogger(__name__)
 
 
 class ProbeEstimator(Protocol):
@@ -19,40 +22,71 @@ class ProbeEstimator(Protocol):
     def probabilities(self, *, activations: np.ndarray) -> np.ndarray | None: ...
 
 
-class _SklearnEstimator:
+class CuMLEstimator:
     def __init__(self, *, config: ProbeConfig) -> None:
-        from sklearn.pipeline import make_pipeline
-        from sklearn.preprocessing import StandardScaler
+        import cuml
+        import cuml.pipeline
 
         if config.kind == "logistic":
-            from sklearn.linear_model import LogisticRegression
-
-            estimator = LogisticRegression(C=config.C, max_iter=config.max_iter)
+            classifier = cuml.linear_model.LogisticRegression(
+                C=config.C,
+                max_iter=config.max_iter,
+                linesearch_max_iter=config.linesearch_max_iter,
+            )
         else:
-            from sklearn.svm import LinearSVC
+            classifier = cuml.svm.LinearSVC(C=config.C, max_iter=config.max_iter)
 
-            estimator = LinearSVC(C=config.C, max_iter=config.max_iter)
+        steps = [("clf", classifier)]
+        if config.add_scaling:
+            steps.insert(0, ("scaler", cuml.preprocessing.StandardScaler()))
         self._estimator = (
-            make_pipeline(StandardScaler(), estimator)
-            if config.add_scaling
-            else estimator
+            cuml.pipeline.Pipeline(steps) if len(steps) > 1 else steps[0][1]
+        )
+        logger.info(
+            "Created cuML estimator: classifier=%s scaling=%s pipeline=%s",
+            type(classifier).__name__,
+            config.add_scaling,
+            len(steps) > 1,
         )
 
     def fit(self, *, activations: np.ndarray, targets: np.ndarray) -> None:
-        self._estimator.fit(activations, targets)
-        self.classes_ = np.asarray(self._estimator.classes_)
+        import cupy
+
+        self.classes_, encoded_targets = np.unique(targets, return_inverse=True)
+        logger.info(
+            "Encoding %d classes for cuML: classes=%s encoded_dtype=%s",
+            len(self.classes_),
+            self.classes_.tolist(),
+            encoded_targets.dtype,
+        )
+        self._estimator.fit(cupy.asarray(activations), cupy.asarray(encoded_targets))
 
     def predict(self, *, activations: np.ndarray) -> np.ndarray:
-        return np.asarray(self._estimator.predict(activations))
+        import cupy
+
+        indices = cupy.asnumpy(
+            self._estimator.predict(cupy.asarray(activations))
+        ).astype(np.intp, copy=False)
+        return self.classes_[indices]
 
     def scores(self, *, activations: np.ndarray) -> np.ndarray:
-        return np.asarray(self._estimator.decision_function(activations))
+        import cupy
+
+        return cupy.asnumpy(
+            self._estimator.decision_function(cupy.asarray(activations))
+        )
 
     def probabilities(self, *, activations: np.ndarray) -> np.ndarray | None:
+        import cupy
+
         predict_proba = getattr(self._estimator, "predict_proba", None)
-        if predict_proba is not None:
-            return np.asarray(predict_proba(activations))
-        return None
+        if predict_proba is None:
+            return None
+        return cupy.asnumpy(predict_proba(cupy.asarray(activations)))
+
+
+# Preserve caches created by the earlier private class name.
+_CuMLEstimator = CuMLEstimator
 
 
 class MeanDifferenceEstimator:
@@ -88,4 +122,4 @@ class MeanDifferenceEstimator:
 def build_estimator(*, config: ProbeConfig) -> ProbeEstimator:
     if config.kind == "mean_difference":
         return MeanDifferenceEstimator(normalize=config.normalize_direction)
-    return _SklearnEstimator(config=config)
+    return CuMLEstimator(config=config)
