@@ -22,6 +22,7 @@ class EvalResult:
     probabilities: np.ndarray | None
     targets: np.ndarray
     classes_: np.ndarray
+    selected_indices: np.ndarray
 
     @property
     def metrics(self) -> ProbeMetrics:

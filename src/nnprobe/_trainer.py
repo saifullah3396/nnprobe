@@ -75,7 +75,7 @@ class ProbeTrainer:
         filter_fn: FilterFn | None = None,
         pool_fn: PoolFn | None = None,
     ) -> TrainResult:
-        x, y, sample_of_row = self._select(
+        x, y, sample_of_row, _selected_indices = self._select(
             dataset,
             layer_name,
             target_fn=target_fn,
@@ -103,7 +103,7 @@ class ProbeTrainer:
         if self.estimator_ is None or self.classes_ is None:
             raise RuntimeError("no fitted estimator; call train() before evaluate()")
 
-        x, y, _sample_of_row = self._select(
+        x, y, _sample_of_row, selected_indices = self._select(
             dataset,
             layer_name,
             target_fn=target_fn,
@@ -123,6 +123,7 @@ class ProbeTrainer:
             scores=self.estimator_.scores(activations=x),
             targets=y,
             classes_=self.classes_,
+            selected_indices=selected_indices,
         )
 
     def load(self, *, path: str | Path) -> TrainResult:
@@ -144,7 +145,7 @@ class ProbeTrainer:
         target_fn: TargetFn,
         filter_fn: FilterFn | None,
         pool_fn: PoolFn | None,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         labels = np.asarray(target_fn(dataset=dataset))
 
         if labels.ndim != 1:
@@ -168,6 +169,7 @@ class ProbeTrainer:
             y = labels
             sample_of_row = dataset.sample_of_token  # type: ignore[attr-defined]
             mask = self._filter_mask(filter_fn, dataset, sample_of_row)
+            selected_indices = np.flatnonzero(mask)
             x, y, sample_of_row = x[mask], y[mask], sample_of_row[mask]
         else:
             raw = dataset.activations[layer_name]
@@ -175,6 +177,7 @@ class ProbeTrainer:
             sample_of_row = np.arange(len(dataset))
 
             mask = self._filter_mask(filter_fn, dataset, sample_of_row)
+            selected_indices = np.flatnonzero(mask)
             raw, y, sample_of_row = raw[mask], y[mask], sample_of_row[mask]
 
             pool = pool_fn or _default_pool
@@ -185,7 +188,7 @@ class ProbeTrainer:
                     f"expected {raw.shape[0]}, got {x.shape[0]}"
                 )
 
-        return x, y, sample_of_row
+        return x, y, sample_of_row, selected_indices
 
     def _filter_mask(
         self,
@@ -225,6 +228,26 @@ class ProbeTrainer:
         logger.info(
             "Fitting probe: %d train rows, %d test rows", len(y_train), len(y_test)
         )
+        logger.info(
+            "Probe configuration: kind=%s C=%s max_iter=%d add_scaling=%s "
+            "linesearch_max_iter=%d",
+            self._config.kind,
+            self._config.C,
+            self._config.max_iter,
+            self._config.add_scaling,
+            self._config.linesearch_max_iter,
+        )
+        logger.info(
+            "Probe data: train_features_shape=%s dtype=%s test_features_shape=%s "
+            "dtype=%s train_labels_shape=%s dtype=%s classes=%s",
+            x_train.shape,
+            x_train.dtype,
+            x_test.shape,
+            x_test.dtype,
+            y_train.shape,
+            y_train.dtype,
+            np.unique(y_train).tolist(),
+        )
         missing_train_labels = set(np.unique(y_test).tolist()) - set(
             np.unique(y_train).tolist()
         )
@@ -236,9 +259,19 @@ class ProbeTrainer:
             )
 
         estimator = build_estimator(config=self._config)
+        logger.info(
+            "Starting %s probe fit with %d classes",
+            type(estimator).__name__,
+            len(np.unique(y_train)),
+        )
         estimator.fit(activations=x_train, targets=y_train)
         self.estimator_ = estimator
         self.classes_ = estimator.classes_
+        logger.info(
+            "Probe fit complete: classes=%s test_rows=%d",
+            self.classes_.tolist(),
+            len(y_test),
+        )
 
         predictions, probabilities = self._predict(x_test)
         return TrainResult(
