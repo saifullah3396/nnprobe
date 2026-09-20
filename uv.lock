@@ -1938,7 +1938,7 @@ wheels = [
 [[package]]
 name = "nnact"
 version = "0.1.0"
-source = { git = "https://github.com/saifullah3396/nnact.git#875d41950d60bb442323284c5918a33678b469ee" }
+source = { git = "https://github.com/saifullah3396/nnact.git#53816764d1554014c9ee7cd734990b906be5ce70" }
 dependencies = [
     { name = "datasets" },
     { name = "h5py" },
