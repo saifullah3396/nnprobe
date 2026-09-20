@@ -188,7 +188,7 @@ class ProbeTrainer:
             )
 
         expected_rows = (
-            dataset.activations[layer_name].shape[0] if is_token_level else len(dataset)
+            dataset.activations(layer_name).shape[0] if is_token_level else len(dataset)
         )
         if labels.shape != (expected_rows,):
             raise ValueError(
@@ -198,7 +198,7 @@ class ProbeTrainer:
         if is_token_level:
             if pool_fn is not None:
                 raise ValueError("pool_fn cannot be used with token-level datasets")
-            x = dataset.activations[layer_name]
+            x = dataset.activations(layer_name)
             y = labels
             sample_of_row = dataset.sample_of_token  # type: ignore[attr-defined]
             mask = self._filter_mask(filter_fn, dataset, sample_of_row)
@@ -212,7 +212,7 @@ class ProbeTrainer:
             )
             x, y, sample_of_row = x[mask], y[mask], sample_of_row[mask]
         else:
-            raw = dataset.activations[layer_name]
+            raw = dataset.activations(layer_name)
             y = labels
             sample_of_row = np.arange(len(dataset))
 

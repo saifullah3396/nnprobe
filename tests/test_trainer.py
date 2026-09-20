@@ -13,9 +13,8 @@ class FakeSequenceDataset(ActivationDataset):
     def layer_names(self) -> list[str]:
         return ["layer"]
 
-    @property
-    def activations(self) -> dict[str, np.ndarray]:
-        return self._activations
+    def activations(self, layer_name: str) -> np.ndarray:
+        return self._activations[layer_name]
 
     @property
     def metadata(self) -> dict[str, np.ndarray]:
@@ -42,7 +41,7 @@ def test_filter_receives_the_complete_dataset() -> None:
         assert metadata is not None
         return metadata["role"]
 
-    activations, labels, samples = trainer._select(
+    activations, labels, samples, _selected_indices = trainer._select(
         dataset=dataset,
         layer_name="layer",
         target_fn=target_fn,
