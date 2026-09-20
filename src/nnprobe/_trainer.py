@@ -50,6 +50,11 @@ def _default_pool(*, activations: np.ndarray, labels: np.ndarray) -> np.ndarray:
     return activations[:, 0, ...]
 
 
+def _callable_name(fn: object) -> str:
+    """Best-effort display name for a callable, for logging only."""
+    return getattr(fn, "__name__", repr(fn))
+
+
 @final
 class ProbeTrainer:
     """Fits and evaluates one linear probe on an :class:`ActivationDataset`.
@@ -75,6 +80,7 @@ class ProbeTrainer:
         filter_fn: FilterFn | None = None,
         pool_fn: PoolFn | None = None,
     ) -> TrainResult:
+        logger.info("train(): layer=%s dataset_size=%d", layer_name, len(dataset))
         x, y, sample_of_row, _selected_indices = self._select(
             dataset,
             layer_name,
@@ -83,6 +89,13 @@ class ProbeTrainer:
             pool_fn=pool_fn,
         )
         train_mask, test_mask = self._split(sample_of_row)
+        logger.info(
+            "train(): split into %d train rows, %d test rows (test_size=%s seed=%s)",
+            int(train_mask.sum()),
+            int(test_mask.sum()),
+            self._config.test_size,
+            self._config.seed,
+        )
         return self._fit(x[train_mask], y[train_mask], x[test_mask], y[test_mask])
 
     def evaluate(
@@ -103,6 +116,7 @@ class ProbeTrainer:
         if self.estimator_ is None or self.classes_ is None:
             raise RuntimeError("no fitted estimator; call train() before evaluate()")
 
+        logger.info("evaluate(): layer=%s dataset_size=%d", layer_name, len(dataset))
         x, y, _sample_of_row, selected_indices = self._select(
             dataset,
             layer_name,
@@ -116,7 +130,14 @@ class ProbeTrainer:
                 f"dataset has label(s) {unknown_labels} the probe was never "
                 f"trained on; known classes are {self.classes_.tolist()}."
             )
+        logger.info(
+            "evaluate(): scoring %d rows against %d known classes",
+            x.shape[0],
+            len(self.classes_),
+        )
         predictions, probabilities = self._predict(x)
+        accuracy = float(np.mean(predictions == y)) if y.shape[0] else float("nan")
+        logger.info("evaluate(): complete, accuracy=%.4f", accuracy)
         return EvalResult(
             predictions=predictions,
             probabilities=probabilities,
@@ -146,14 +167,26 @@ class ProbeTrainer:
         filter_fn: FilterFn | None,
         pool_fn: PoolFn | None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        is_token_level = hasattr(dataset, "sample_of_token")
+        logger.info(
+            "_select(): layer=%s level=%s",
+            layer_name,
+            "token" if is_token_level else "sequence",
+        )
+
         labels = np.asarray(target_fn(dataset=dataset))
+        logger.info(
+            "_select(): target_fn returned %d labels, %d unique: %s",
+            labels.shape[0] if labels.ndim else 0,
+            len(np.unique(labels)) if labels.size else 0,
+            np.unique(labels).tolist() if labels.size else [],
+        )
 
         if labels.ndim != 1:
             raise ValueError(
                 f"target_fn must return a one-dimensional array, got {labels.shape}"
             )
 
-        is_token_level = hasattr(dataset, "sample_of_token")
         expected_rows = (
             dataset.activations[layer_name].shape[0] if is_token_level else len(dataset)
         )
@@ -170,6 +203,13 @@ class ProbeTrainer:
             sample_of_row = dataset.sample_of_token  # type: ignore[attr-defined]
             mask = self._filter_mask(filter_fn, dataset, sample_of_row)
             selected_indices = np.flatnonzero(mask)
+            logger.info(
+                "_select(): filter_fn=%s kept %d/%d token rows across %d samples",
+                _callable_name(filter_fn) if filter_fn is not None else None,
+                int(mask.sum()),
+                mask.shape[0],
+                len(np.unique(sample_of_row[mask])) if mask.any() else 0,
+            )
             x, y, sample_of_row = x[mask], y[mask], sample_of_row[mask]
         else:
             raw = dataset.activations[layer_name]
@@ -178,9 +218,20 @@ class ProbeTrainer:
 
             mask = self._filter_mask(filter_fn, dataset, sample_of_row)
             selected_indices = np.flatnonzero(mask)
+            logger.info(
+                "_select(): filter_fn=%s kept %d/%d sequence rows",
+                _callable_name(filter_fn) if filter_fn is not None else None,
+                int(mask.sum()),
+                mask.shape[0],
+            )
             raw, y, sample_of_row = raw[mask], y[mask], sample_of_row[mask]
 
             pool = pool_fn or _default_pool
+            logger.info(
+                "_select(): pooling %s rows with %s",
+                raw.shape,
+                _callable_name(pool_fn) if pool_fn is not None else "_default_pool",
+            )
             x = pool(activations=raw, labels=y)
             if x.shape[0] != raw.shape[0]:
                 raise ValueError(
@@ -188,6 +239,12 @@ class ProbeTrainer:
                     f"expected {raw.shape[0]}, got {x.shape[0]}"
                 )
 
+        logger.info(
+            "_select(): final selection x=%s y=%s (%d samples represented)",
+            x.shape,
+            y.shape,
+            len(np.unique(sample_of_row)) if sample_of_row.size else 0,
+        )
         return x, y, sample_of_row, selected_indices
 
     def _filter_mask(
